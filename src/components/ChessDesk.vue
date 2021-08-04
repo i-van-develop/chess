@@ -149,13 +149,60 @@ const kingDirections = (team: 0|1, matrix: ChessDeskMatrix, x: number, y: number
     return generateDirections(KING_MOVES, 1, team, matrix, x, y);
 };
 
+const findDirections = (type: number, team: 0|1, matrix: ChessDeskMatrix, x: number, y: number): Coords[] => {
+    let calcDirection = pawnDirections;
+    switch (type){
+        case BISHOP: calcDirection = bishopDirections; break;
+        case ROOK: calcDirection = rookDirections; break;
+        case KNIGHT: calcDirection = knightDirections; break;
+        case QUEEN: calcDirection = queenDirections; break;
+        case KING: calcDirection = kingDirections; break;
+    }
+    return calcDirection(team, matrix, x, y) as Coords[];
+};
+
+const checkCheck = (team: 0|1, matrix: ChessDeskMatrix) => {
+    for(let y=0; y<matrix.length; ++y){
+        for (let x=0; x<matrix[y].length; ++x){
+            const figure = matrix[y][x];
+            if (figure !== 0 && figure.team !== team){
+                const possibleDirections = findDirections(
+                    figure.type,
+                    team === WHITE_TEAM ? BLACK_TEAM : WHITE_TEAM,
+                    matrix,
+                    x,
+                    y
+                );
+                const check = possibleDirections.some(([px, py]) => {
+                    const pFigure = matrix[py][px];
+                    if (pFigure !== 0 && pFigure.team === team && pFigure.type === KING){
+                        return true;
+                    }
+                })
+                if (check){
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+const moveDesk = (matrix: ChessDeskMatrix, x1: number, y1: number, x2: number, y2: number): ChessDeskMatrix => {
+    let newMatrix = cloneDeep(matrix);
+    const figure = newMatrix[y1][x1];
+    newMatrix[y1][x1] = 0;
+    newMatrix[y2][x2] = figure;
+    return newMatrix;
+}
+
 export default defineComponent({
     name: 'ChessDesk',
     setup(){
         const chessDeskMatrix = ref<ChessDeskMatrix>(generateStartChessDesk());
         const backBuffer = ref<ChessDeskMatrix[]>([]);
         const nextBuffer = ref<ChessDeskMatrix[]>([]);
-        let teamStep = WHITE_TEAM;
+        let teamStep: 0|1 = WHITE_TEAM;
         let clickedPosition = ref<false|Coords>(false);
         let possibleDirections = ref<Coords[]>([]);
 
@@ -165,18 +212,8 @@ export default defineComponent({
             const figure = chessDeskMatrix.value[y][x];
             if (figure !== 0 && figure.team === teamStep){
                 clickedPosition.value = [x, y];
-                let calcDirection = null;
-                switch (figure.type){
-                    case PAWN: calcDirection = pawnDirections; break;
-                    case BISHOP: calcDirection = bishopDirections; break;
-                    case ROOK: calcDirection = rookDirections; break;
-                    case KNIGHT: calcDirection = knightDirections; break;
-                    case QUEEN: calcDirection = queenDirections; break;
-                    case KING: calcDirection = kingDirections; break;
-                }
-                if (calcDirection){
-                    possibleDirections.value = calcDirection(teamStep, chessDeskMatrix.value, x, y);
-                }
+                possibleDirections.value = findDirections(figure.type, teamStep, chessDeskMatrix.value, x, y)
+                    .filter(([px, py]) => !checkCheck(teamStep, moveDesk(chessDeskMatrix.value, x, y, px, py)));
             }
         }
 
@@ -185,9 +222,7 @@ export default defineComponent({
                 backBuffer.value.push(cloneDeep(chessDeskMatrix.value));
                 nextBuffer.value = [];
                 const [cx, cy] = clickedPosition.value;
-                const figure = chessDeskMatrix.value[cy][cx];
-                chessDeskMatrix.value[cy][cx] = 0;
-                chessDeskMatrix.value[y][x] = figure;
+                chessDeskMatrix.value = moveDesk(chessDeskMatrix.value, cx, cy, x, y);
 
                 teamStep = teamStep === WHITE_TEAM ? BLACK_TEAM : WHITE_TEAM;
                 clickedPosition.value = false;
@@ -197,6 +232,8 @@ export default defineComponent({
 
         const backMove = () => {
             if (backBuffer.value.length > 0){
+                clickedPosition.value = false;
+                possibleDirections.value = [];
                 teamStep = teamStep === WHITE_TEAM ? BLACK_TEAM : WHITE_TEAM;
                 const popped = backBuffer.value.pop() as ChessDeskMatrix;
                 nextBuffer.value.push(cloneDeep(chessDeskMatrix.value));
@@ -206,6 +243,8 @@ export default defineComponent({
 
         const nextMove = () => {
             if (nextBuffer.value.length > 0){
+                clickedPosition.value = false;
+                possibleDirections.value = [];
                 teamStep = teamStep === WHITE_TEAM ? BLACK_TEAM : WHITE_TEAM;
                 const popped = nextBuffer.value.pop() as ChessDeskMatrix;
                 backBuffer.value.push(cloneDeep(chessDeskMatrix.value));
